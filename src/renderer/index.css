@@ -1,0 +1,99 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  body {
+    @apply bg-light dark:bg-dark text-gray-900 dark:text-gray-100 font-sans;
+    @apply transition-colors duration-200;
+  }
+}
+
+@layer components {
+  .glass {
+    @apply bg-white/10 dark:bg-black/10;
+    @apply backdrop-blur-glass;
+    @apply border border-white/20 dark:border-white/10;
+    @apply rounded-xl;
+  }
+  
+  .glass-strong {
+    @apply bg-white/20 dark:bg-black/20;
+    @apply backdrop-blur-glass;
+    @apply border border-white/30 dark:border-white/15;
+    @apply rounded-xl;
+  }
+  
+  .btn {
+    @apply px-4 py-2 rounded-lg font-medium;
+    @apply transition-all duration-200;
+    @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
+  }
+  
+  .btn-primary {
+    @apply btn bg-primary hover:bg-primary-hover text-white;
+    @apply focus:ring-primary;
+    @apply transform hover:scale-105 active:scale-100;
+  }
+  
+  .btn-success {
+    @apply btn bg-success hover:bg-success-hover text-white;
+    @apply focus:ring-success;
+    @apply transform hover:scale-105 active:scale-100;
+  }
+  
+  .btn-secondary {
+    @apply btn glass hover:glass-strong text-gray-700 dark:text-gray-200;
+    @apply transform hover:scale-105 active:scale-100;
+  }
+  
+  .input {
+    @apply w-full px-4 py-2 rounded-lg;
+    @apply bg-white/50 dark:bg-black/50;
+    @apply border border-light-border dark:border-dark-border;
+    @apply focus:outline-none focus:ring-2 focus:ring-primary;
+    @apply transition-all duration-200;
+  }
+  
+  .card {
+    @apply glass p-6;
+    @apply animate-fade-in;
+  }
+  
+  .sidebar-btn {
+    @apply w-full p-4 rounded-lg text-left;
+    @apply glass hover:glass-strong;
+    @apply transition-all duration-200;
+    @apply transform hover:scale-105 active:scale-100;
+    @apply flex flex-col items-center gap-2;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    @apply bg-gray-400/50 dark:bg-gray-600/50 rounded-full;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-500/70 dark:bg-gray-500/70;
+  }
+}
