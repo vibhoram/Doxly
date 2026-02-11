@@ -48,6 +48,102 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'Doxly Backend is running!' });
 });
 
+// ============================================
+// ANALYTICS SYSTEM (GOD MODE) 👁️
+// ============================================
+const analyticsDB = {
+  events: [],
+  sessions: new Map()
+};
+
+// Analytics endpoint - receive events from frontend
+app.post('/api/analytics', (req, res) => {
+  try {
+    const { events } = req.body;
+    
+    if (!events || !Array.isArray(events)) {
+      return res.status(400).json({ error: 'Invalid events data' });
+    }
+
+    // Store events
+    analyticsDB.events.push(...events);
+
+    // Update session tracking
+    events.forEach(event => {
+      if (!analyticsDB.sessions.has(event.sessionId)) {
+        analyticsDB.sessions.set(event.sessionId, {
+          sessionId: event.sessionId,
+          startTime: event.timestamp,
+          lastActive: event.timestamp,
+          events: []
+        });
+      }
+      
+      const session = analyticsDB.sessions.get(event.sessionId);
+      session.lastActive = event.timestamp;
+      session.events.push(event);
+    });
+
+    // Keep only last 10k events to prevent memory issues
+    if (analyticsDB.events.length > 10000) {
+      analyticsDB.events = analyticsDB.events.slice(-10000);
+   }
+
+    res.json({ success: true, eventsReceived: events.length });
+  } catch (error) {
+    console.error('Analytics error:', error);
+    res.status(500).json({ error: 'Analytics failed' });
+  }
+});
+
+// Analytics stats endpoint - view the data
+app.get('/api/analytics/stats', (req, res) => {
+  try {
+    const now = Date.now();
+    const last24h = now - (24 * 60 * 60 * 1000);
+    const last7d = now - (7 * 24 * 60 * 60 * 1000);
+
+    // Filter events by time
+    const events24h = analyticsDB.events.filter(e => e.timestamp > last24h);
+    const events7d = analyticsDB.events.filter(e => e.timestamp > last7d);
+
+    // Calculate stats
+    const toolUsage = {};
+    events24h.filter(e => e.event === 'tool_complete').forEach(e => {
+      toolUsage[e.tool] = (toolUsage[e.tool] || 0) + 1;
+    });
+
+    const activeSessions = Array.from(analyticsDB.sessions.values())
+      .filter(s => s.lastActive > last24h);
+
+    const stats = {
+      overview: {
+        totalEvents: analyticsDB.events.length,
+        totalSessions: analyticsDB.sessions.size,
+        activeSessions24h: activeSessions.length
+      },
+      last24h: {
+        events: events24h.length,
+        toolUsage,
+        uniqueTools: Object.keys(toolUsage).length
+      },
+      last7d: {
+        events: events7d.length
+      },
+      topTools: Object.entries(toolUsage)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 10)
+        .map(([tool, count]) => ({ tool, count }))
+    };
+
+    res.json(stats);
+  } catch (error) {
+    console.error('Stats error:', error);
+    res.status(500).json({ error: 'Stats failed' });
+  }
+});
+
+
 // Word to PDF
 app.post('/api/convert/word-to-pdf', upload.single('file'), async (req, res) => {
   try {
