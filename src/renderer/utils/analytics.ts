@@ -19,7 +19,7 @@ class DoxlyAnalytics {
   constructor() {
     this.sessionId = this.generateSessionId();
     this.sessionStart = Date.now();
-    this.apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+    this.apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4777';
     
     // Track session start
     this.track('session_start');

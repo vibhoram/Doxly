@@ -6,9 +6,19 @@ const fs = require('fs-extra');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { promisify } = require('util');
+const http = require('http');
+const { Server } = require('socket.io');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
+
+const PORT = process.env.PORT || 4777;
 
 // Convert libre.convert to promise
 const convertAsync = promisify(libre.convert);
@@ -20,6 +30,19 @@ app.use(cors({
 }));
 
 app.use(express.json());
+
+// ============================================
+// GLOBAL SYSTEM STATE (GOD MODE) 👁️
+// ============================================
+const systemState = {
+  maintenanceMode: false,
+  systemMessage: ""
+};
+
+const analyticsDB = {
+  events: [],
+  sessions: new Map()
+};
 
 // Create temp directory for uploads
 const UPLOAD_DIR = path.join(__dirname, 'temp');
@@ -43,32 +66,29 @@ const upload = multer({
   }
 });
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Doxly Backend is running!' });
+// Middleware to block traffic if maintenance is active
+app.use((req, res, next) => {
+  if (systemState.maintenanceMode && !req.path.startsWith('/api/admin') && !req.path.startsWith('/api/analytics/stats')) {
+    return res.status(503).json({ 
+      error: 'System Maintenance', 
+      message: systemState.systemMessage || 'Doxly is currently undergoing orbital maintenance.' 
+    });
+  }
+  next();
 });
 
-// ============================================
-// ANALYTICS SYSTEM (GOD MODE) 👁️
-// ============================================
-const analyticsDB = {
-  events: [],
-  sessions: new Map()
-};
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', message: 'Doxly Backend is running!', ...systemState });
+});
 
-// Analytics endpoint - receive events from frontend
+// Analytics endpoint
 app.post('/api/analytics', (req, res) => {
   try {
     const { events } = req.body;
-    
-    if (!events || !Array.isArray(events)) {
-      return res.status(400).json({ error: 'Invalid events data' });
-    }
+    if (!events || !Array.isArray(events)) return res.status(400).json({ error: 'Invalid data' });
 
-    // Store events
     analyticsDB.events.push(...events);
-
-    // Update session tracking
     events.forEach(event => {
       if (!analyticsDB.sessions.has(event.sessionId)) {
         analyticsDB.sessions.set(event.sessionId, {
@@ -78,112 +98,96 @@ app.post('/api/analytics', (req, res) => {
           events: []
         });
       }
-      
       const session = analyticsDB.sessions.get(event.sessionId);
       session.lastActive = event.timestamp;
       session.events.push(event);
+      
+      // REAL-TIME BROADCAST TO ADMIN
+      io.emit('admin_event_stream', event);
     });
 
-    // Keep only last 10k events to prevent memory issues
-    if (analyticsDB.events.length > 10000) {
-      analyticsDB.events = analyticsDB.events.slice(-10000);
-   }
-
-    res.json({ success: true, eventsReceived: events.length });
+    if (analyticsDB.events.length > 10000) analyticsDB.events = analyticsDB.events.slice(-10000);
+    res.json({ success: true });
   } catch (error) {
-    console.error('Analytics error:', error);
     res.status(500).json({ error: 'Analytics failed' });
   }
 });
 
-// Analytics stats endpoint - view the data
 app.get('/api/analytics/stats', (req, res) => {
-  try {
-    const now = Date.now();
-    const last24h = now - (24 * 60 * 60 * 1000);
-    const last7d = now - (7 * 24 * 60 * 60 * 1000);
-
-    // Filter events by time
-    const events24h = analyticsDB.events.filter(e => e.timestamp > last24h);
-    const events7d = analyticsDB.events.filter(e => e.timestamp > last7d);
-
-    // Calculate stats
-    const toolUsage = {};
-    events24h.filter(e => e.event === 'tool_complete').forEach(e => {
-      toolUsage[e.tool] = (toolUsage[e.tool] || 0) + 1;
-    });
-
-    const activeSessions = Array.from(analyticsDB.sessions.values())
-      .filter(s => s.lastActive > last24h);
-
-    const stats = {
-      overview: {
-        totalEvents: analyticsDB.events.length,
-        totalSessions: analyticsDB.sessions.size,
-        activeSessions24h: activeSessions.length
-      },
-      last24h: {
-        events: events24h.length,
-        toolUsage,
-        uniqueTools: Object.keys(toolUsage).length
-      },
-      last7d: {
-        events: events7d.length
-      },
-      topTools: Object.entries(toolUsage)
-        .sort(([,a], [,b]) => b - a)
-        .slice(0, 10)
-        .map(([tool, count]) => ({ tool, count }))
-    };
-
-    res.json(stats);
-  } catch (error) {
-    console.error('Stats error:', error);
-    res.status(500).json({ error: 'Stats failed' });
-  }
+  const toolUsage = {};
+  analyticsDB.events.filter(e => e.event === 'tool_complete').forEach(e => {
+    toolUsage[e.tool] = (toolUsage[e.tool] || 0) + 1;
+  });
+  res.json({
+    overview: {
+      totalEvents: analyticsDB.events.length,
+      totalSessions: analyticsDB.sessions.size,
+      maintenance: systemState.maintenanceMode
+    },
+    last24h: {
+      events: analyticsDB.events.filter(e => e.timestamp > Date.now() - 86400000).length,
+      toolUsage
+    },
+    topTools: Object.entries(toolUsage).sort(([,a], [,b]) => b - a).slice(0, 10).map(([tool, count]) => ({ tool, count }))
+  });
 });
 
+// ============================================
+// ACTUAL GOD POWERS (ADMIN ONLY) ⚡
+// ============================================
+
+// 1. Toggle Maintenance Mode
+app.post('/api/admin/maintenance', (req, res) => {
+  const { active, message } = req.body;
+  systemState.maintenanceMode = active;
+  systemState.systemMessage = message || "";
+  io.emit('system_update', systemState);
+  res.json({ success: true, ...systemState });
+});
+
+// 2. Global Broadcast (Show message to all users)
+app.post('/api/admin/broadcast', (req, res) => {
+  const { message, type = 'info' } = req.body;
+  io.emit('global_broadcast', { message, type });
+  res.json({ success: true });
+});
+
+// 3. Force Refresh All Clients
+app.post('/api/admin/force-refresh', (req, res) => {
+  io.emit('force_refresh');
+  res.json({ success: true });
+});
+
+// 4. Wipe Everything
+app.post('/api/admin/wipe', async (req, res) => {
+  analyticsDB.events = [];
+  analyticsDB.sessions.clear();
+  await cleanupTempFiles();
+  res.json({ success: true, message: 'System wiped clean' });
+});
 
 // Word to PDF
 app.post('/api/convert/word-to-pdf', upload.single('file'), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
-
+    if (!req.file) return res.status(400).json({ error: 'No file' });
     const inputPath = req.file.path;
     const outputPath = path.join(UPLOAD_DIR, `${uuidv4()}.pdf`);
-
-    // Read the docx file
     const docxBuf = await fs.readFile(inputPath);
-
-    // Convert to PDF
     const pdfBuf = await convertAsync(docxBuf, '.pdf', undefined);
-
-    // Write PDF file
     await fs.writeFile(outputPath, pdfBuf);
-
-    // Send file to client
-    res.download(outputPath, 'converted.pdf', async (err) => {
-      // Cleanup files after sending
+    res.download(outputPath, 'converted.pdf', async () => {
       await fs.remove(inputPath).catch(console.error);
       await fs.remove(outputPath).catch(console.error);
-      
-      if (err) console.error('Download error:', err);
     });
-
   } catch (error) {
-    console.error('Conversion error:', error);
-    res.status(500).json({ error: 'Conversion failed', details: error.message });
+    res.status(500).json({ error: 'Failed' });
   }
 });
 
 // Excel to PDF
 app.post('/api/convert/excel-to-pdf', upload.single('file'), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
+    if (!req.file) return res.status(400).json({ error: 'No file' });
 
     const inputPath = req.file.path;
     const outputPath = path.join(UPLOAD_DIR, `${uuidv4()}.pdf`);
@@ -192,24 +196,20 @@ app.post('/api/convert/excel-to-pdf', upload.single('file'), async (req, res) =>
     const pdfBuf = await convertAsync(xlsxBuf, '.pdf', undefined);
     await fs.writeFile(outputPath, pdfBuf);
 
-    res.download(outputPath, 'converted.pdf', async (err) => {
+    res.download(outputPath, 'converted.pdf', async () => {
       await fs.remove(inputPath).catch(console.error);
       await fs.remove(outputPath).catch(console.error);
-      if (err) console.error('Download error:', err);
     });
 
   } catch (error) {
-    console.error('Conversion error:', error);
-    res.status(500).json({ error: 'Conversion failed', details: error.message });
+    res.status(500).json({ error: 'Failed' });
   }
 });
 
 // PowerPoint to PDF
 app.post('/api/convert/ppt-to-pdf', upload.single('file'), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
+    if (!req.file) return res.status(400).json({ error: 'No file' });
 
     const inputPath = req.file.path;
     const outputPath = path.join(UPLOAD_DIR, `${uuidv4()}.pdf`);
@@ -218,24 +218,20 @@ app.post('/api/convert/ppt-to-pdf', upload.single('file'), async (req, res) => {
     const pdfBuf = await convertAsync(pptxBuf, '.pdf', undefined);
     await fs.writeFile(outputPath, pdfBuf);
 
-    res.download(outputPath, 'converted.pdf', async (err) => {
+    res.download(outputPath, 'converted.pdf', async () => {
       await fs.remove(inputPath).catch(console.error);
       await fs.remove(outputPath).catch(console.error);
-      if (err) console.error('Download error:', err);
     });
 
   } catch (error) {
-    console.error('Conversion error:', error);
-    res.status(500).json({ error: 'Conversion failed', details: error.message });
+    res.status(500).json({ error: 'Failed' });
   }
 });
 
 // PDF to Word
 app.post('/api/convert/pdf-to-word', upload.single('file'), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
+    if (!req.file) return res.status(400).json({ error: 'No file' });
 
     const inputPath = req.file.path;
     const outputPath = path.join(UPLOAD_DIR, `${uuidv4()}.docx`);
@@ -244,24 +240,20 @@ app.post('/api/convert/pdf-to-word', upload.single('file'), async (req, res) => 
     const docxBuf = await convertAsync(pdfBuf, '.docx', undefined);
     await fs.writeFile(outputPath, docxBuf);
 
-    res.download(outputPath, 'converted.docx', async (err) => {
+    res.download(outputPath, 'converted.docx', async () => {
       await fs.remove(inputPath).catch(console.error);
       await fs.remove(outputPath).catch(console.error);
-      if (err) console.error('Download error:', err);
     });
 
   } catch (error) {
-    console.error('Conversion error:', error);
-    res.status(500).json({ error: 'Conversion failed', details: error.message });
+    res.status(500).json({ error: 'Failed' });
   }
 });
 
 // PDF to PowerPoint
 app.post('/api/convert/pdf-to-ppt', upload.single('file'), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
+    if (!req.file) return res.status(400).json({ error: 'No file' });
 
     const inputPath = req.file.path;
     const outputPath = path.join(UPLOAD_DIR, `${uuidv4()}.pptx`);
@@ -270,24 +262,20 @@ app.post('/api/convert/pdf-to-ppt', upload.single('file'), async (req, res) => {
     const pptxBuf = await convertAsync(pdfBuf, '.pptx', undefined);
     await fs.writeFile(outputPath, pptxBuf);
 
-    res.download(outputPath, 'converted.pptx', async (err) => {
+    res.download(outputPath, 'converted.pptx', async () => {
       await fs.remove(inputPath).catch(console.error);
       await fs.remove(outputPath).catch(console.error);
-      if (err) console.error('Download error:', err);
     });
 
   } catch (error) {
-    console.error('Conversion error:', error);
-    res.status(500).json({ error: 'Conversion failed', details: error.message });
+    res.status(500).json({ error: 'Failed' });
   }
 });
 
 // PDF to Excel
 app.post('/api/convert/pdf-to-excel', upload.single('file'), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
+    if (!req.file) return res.status(400).json({ error: 'No file' });
 
     const inputPath = req.file.path;
     const outputPath = path.join(UPLOAD_DIR, `${uuidv4()}.xlsx`);
@@ -296,34 +284,30 @@ app.post('/api/convert/pdf-to-excel', upload.single('file'), async (req, res) =>
     const xlsxBuf = await convertAsync(pdfBuf, '.xlsx', undefined);
     await fs.writeFile(outputPath, xlsxBuf);
 
-    res.download(outputPath, 'converted.xlsx', async (err) => {
+    res.download(outputPath, 'converted.xlsx', async () => {
       await fs.remove(inputPath).catch(console.error);
       await fs.remove(outputPath).catch(console.error);
-      if (err) console.error('Download error:', err);
     });
 
   } catch (error) {
-    console.error('Conversion error:', error);
-    res.status(500).json({ error: 'Conversion failed', details: error.message });
+    res.status(500).json({ error: 'Failed' });
   }
 });
 
-// Cleanup old files on startup
 async function cleanupTempFiles() {
   try {
     const files = await fs.readdir(UPLOAD_DIR);
-    for (const file of files) {
-      await fs.remove(path.join(UPLOAD_DIR, file));
-    }
+    for (const file of files) await fs.remove(path.join(UPLOAD_DIR, file));
     console.log('✅ Temp files cleaned');
-  } catch (error) {
-    console.error('Cleanup error:', error);
-  }
+  } catch (error) {}
 }
 
-// Start server
-app.listen(PORT, async () => {
+io.on('connection', (socket) => {
+  console.log('🔗 Client connected:', socket.id);
+  socket.emit('system_update', systemState);
+});
+
+server.listen(PORT, async () => {
   await cleanupTempFiles();
-  console.log(`🚀 Doxly Backend running on port ${PORT}`);
-  console.log(`📍 Health check: http://localhost:${PORT}/health`);
+  console.log(`🚀 Doxly GOD-MODE Engine running on port ${PORT}`);
 });

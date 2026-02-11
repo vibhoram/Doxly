@@ -1,7 +1,7 @@
 // API Configuration for Doxly Backend
 // Replace 'YOUR_RAILWAY_URL' with your actual Railway URL after deployment
 
-const API_BASE_URL = process.env.VITE_API_URL || 'http://localhost:3001';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4777';
 
 export const api = {
   // Office Conversions

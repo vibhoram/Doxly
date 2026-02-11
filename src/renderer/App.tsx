@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { io } from 'socket.io-client';
 import { Toaster } from 'react-hot-toast';
 import { 
   Layout, Scissors, Minimize2, RotateCw, 
@@ -25,6 +26,7 @@ import ScrollToTop from './components/ScrollToTop';
 import { useAppStore } from './store';
 import toast from 'react-hot-toast';
 import * as Static from './components/StaticPages';
+import AdminDashboard from './pages/AdminDashboard';
 
 type ToolType = string | null;
 
@@ -323,9 +325,57 @@ function Home() {
 
 function App() {
   const location = useLocation();
+  const [maintenance, setMaintenance] = useState({ active: false, message: "" });
+  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4777';
+
+  useEffect(() => {
+    const socket = io(apiUrl);
+
+    socket.on('system_update', (state) => {
+      setMaintenance({ active: state.maintenanceMode, message: state.systemMessage });
+    });
+
+    socket.on('global_broadcast', (data) => {
+      if (data.type === 'error') toast.error(data.message, { duration: 5000 });
+      else toast.success(data.message, { duration: 5000 });
+    });
+
+    socket.on('force_refresh', () => {
+      toast.loading('System update required. Reloading...', { duration: 2000 });
+      setTimeout(() => window.location.reload(), 2000);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [apiUrl]);
 
   return (
     <div className="min-h-screen relative selection:bg-primary selection:text-white flex flex-col bg-slate-50/50">
+      <AnimatePresence>
+        {maintenance.active && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[9999] bg-slate-900/80 backdrop-blur-2xl flex items-center justify-center p-6 text-center"
+          >
+            <div className="max-w-md">
+              <div className="w-24 h-24 bg-primary/20 rounded-3xl flex items-center justify-center mx-auto mb-8 animate-pulse text-primary border border-primary/20">
+                <Lock className="w-12 h-12" />
+              </div>
+              <h1 className="text-4xl font-black text-white mb-4 uppercase italic tracking-tighter">System Lockdown</h1>
+              <p className="text-slate-400 text-lg font-medium leading-relaxed mb-12">
+                {maintenance.message || "Doxly is currently undergoing orbital maintenance. We'll be back shortly."}
+              </p>
+              <div className="inline-flex items-center gap-3 px-6 py-3 bg-white/5 border border-white/10 rounded-full">
+                <div className="w-2 h-2 rounded-full bg-primary animate-ping" />
+                <span className="text-xs font-black uppercase tracking-widest text-slate-500">Real-time status: Active</span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <div className="fixed inset-0 z-0 opacity-10 pointer-events-none">
         <Particles 
           particleColors={['#6366f1', '#4f46e5', '#94a3b8']}
@@ -363,6 +413,7 @@ function App() {
           <Route path="/terms" element={<Static.Terms />} />
           <Route path="/privacy" element={<Static.Privacy />} />
           <Route path="/cookie-policy" element={<Static.CookiePolicy />} />
+          <Route path="/admin" element={<AdminDashboard />} />
         </Routes>
       </main>
 
