@@ -1,4 +1,4 @@
-# PDF ProForge
+# Doxly
 
 Professional offline PDF toolkit with unlimited file size support - built with Electron, React, and TypeScript.
 

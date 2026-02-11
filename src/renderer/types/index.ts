@@ -15,6 +15,7 @@ export interface PDFFile {
   thumbnail?: string;
   selected: boolean;
   created: Date;
+  data?: ArrayBuffer; // Support for browser-mode data persistence
 }
 
 export interface Operation {

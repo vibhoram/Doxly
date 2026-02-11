@@ -2,252 +2,195 @@ import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 
 // Configure PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+if (typeof window !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+    'pdfjs-dist/build/pdf.worker.mjs',
+    import.meta.url
+  ).toString();
+}
+
+/**
+ * High-speed buffer cloning for immutable local processing
+ */
+const getBufferCopy = (buffer: ArrayBuffer) => {
+  const copy = new ArrayBuffer(buffer.byteLength);
+  new Uint8Array(copy).set(new Uint8Array(buffer));
+  return copy;
+};
 
 export const pdfUtils = {
   /**
-   * Merge multiple PDF files into one
-   */
-  async mergePDFs(pdfBuffers: ArrayBuffer[]): Promise<Uint8Array> {
-    const mergedPdf = await PDFDocument.create();
-
-    for (const pdfBuffer of pdfBuffers) {
-      const pdf = await PDFDocument.load(pdfBuffer);
-      const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
-      copiedPages.forEach((page) => {
-        mergedPdf.addPage(page);
-      });
-    }
-
-    return await mergedPdf.save();
-  },
-
-  /**
-   * Split PDF into individual pages or ranges
-   */
-  async splitPDF(
-    pdfBuffer: ArrayBuffer,
-    ranges: { start: number; end: number }[]
-  ): Promise<Uint8Array[]> {
-    const pdfDoc = await PDFDocument.load(pdfBuffer);
-    const results: Uint8Array[] = [];
-
-    for (const range of ranges) {
-      const newPdf = await PDFDocument.create();
-      const pages = await newPdf.copyPages(
-        pdfDoc,
-        Array.from({ length: range.end - range.start + 1 }, (_, i) => range.start + i)
-      );
-      pages.forEach((page) => newPdf.addPage(page));
-      results.push(await newPdf.save());
-    }
-
-    return results;
-  },
-
-  /**
-   * Extract specific pages from PDF
-   */
-  async extractPages(pdfBuffer: ArrayBuffer, pageNumbers: number[]): Promise<Uint8Array> {
-    const pdfDoc = await PDFDocument.load(pdfBuffer);
-    const newPdf = await PDFDocument.create();
-
-    const pages = await newPdf.copyPages(pdfDoc, pageNumbers);
-    pages.forEach((page) => newPdf.addPage(page));
-
-    return await newPdf.save();
-  },
-
-  /**
-   * Rotate PDF pages
-   */
-  async rotatePDF(
-    pdfBuffer: ArrayBuffer,
-    rotation: 90 | 180 | 270,
-    pageNumbers?: number[]
-  ): Promise<Uint8Array> {
-    const pdfDoc = await PDFDocument.load(pdfBuffer);
-    const pages = pdfDoc.getPages();
-
-    const pagesToRotate = pageNumbers || pages.map((_, i) => i);
-
-    pagesToRotate.forEach((pageNum) => {
-      if (pageNum < pages.length) {
-        const page = pages[pageNum];
-        const currentRotation = page.getRotation().angle;
-        page.setRotation(degrees(currentRotation + rotation));
-      }
-    });
-
-    return await pdfDoc.save();
-  },
-
-  /**
-   * Add text to PDF
-   */
-  async addTextToPDF(
-    pdfBuffer: ArrayBuffer,
-    text: string,
-    options: {
-      page: number;
-      x: number;
-      y: number;
-      size?: number;
-      color?: { r: number; g: number; b: number };
-      font?: string;
-    }
-  ): Promise<Uint8Array> {
-    const pdfDoc = await PDFDocument.load(pdfBuffer);
-    const pages = pdfDoc.getPages();
-    const page = pages[options.page];
-
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    const fontSize = options.size || 12;
-    const color = options.color || { r: 0, g: 0, b: 0 };
-
-    page.drawText(text, {
-      x: options.x,
-      y: options.y,
-      size: fontSize,
-      font: font,
-      color: rgb(color.r, color.g, color.b)
-    });
-
-    return await pdfDoc.save();
-  },
-
-  /**
-   * Add watermark to PDF
-   */
-  async addWatermark(
-    pdfBuffer: ArrayBuffer,
-    watermarkText: string,
-    options?: {
-      opacity?: number;
-      size?: number;
-      rotation?: number;
-    }
-  ): Promise<Uint8Array> {
-    const pdfDoc = await PDFDocument.load(pdfBuffer);
-    const pages = pdfDoc.getPages();
-    const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-
-    const opacity = options?.opacity || 0.3;
-    const size = options?.size || 60;
-    const rotation = options?.rotation || 45;
-
-    pages.forEach((page) => {
-      const { width, height } = page.getSize();
-      page.drawText(watermarkText, {
-        x: width / 2 - (watermarkText.length * size) / 4,
-        y: height / 2,
-        size: size,
-        font: font,
-        color: rgb(0.5, 0.5, 0.5),
-        opacity: opacity,
-        rotate: degrees(rotation)
-      });
-    });
-
-    return await pdfDoc.save();
-  },
-
-  /**
-   * Compress PDF (reduce quality)
-   */
-  async compressPDF(
-    pdfBuffer: ArrayBuffer,
-    quality: number = 0.7
-  ): Promise<Uint8Array> {
-    // Note: pdf-lib doesn't have built-in compression
-    // This is a simplified version that re-saves the PDF
-    // For real compression, you'd need additional libraries
-    const pdfDoc = await PDFDocument.load(pdfBuffer);
-    
-    // Save with reduced options
-    return await pdfDoc.save({
-      useObjectStreams: true,
-      addDefaultPage: false
-    });
-  },
-
-  /**
-   * Get PDF page count
+   * Scans document structure to retrieve page metrics
    */
   async getPageCount(pdfBuffer: ArrayBuffer): Promise<number> {
-    const pdfDoc = await PDFDocument.load(pdfBuffer);
+    const pdfDoc = await PDFDocument.load(getBufferCopy(pdfBuffer));
     return pdfDoc.getPageCount();
   },
 
   /**
-   * Generate PDF thumbnail using PDF.js
+   * Generates a secure visual preview of a specific document page
    */
   async generateThumbnail(pdfBuffer: ArrayBuffer, pageNumber: number = 0): Promise<string> {
     try {
-      const loadingTask = pdfjsLib.getDocument({ data: pdfBuffer });
+      const loadingTask = pdfjsLib.getDocument({ data: getBufferCopy(pdfBuffer) });
       const pdf = await loadingTask.promise;
-      const page = await pdf.getPage(pageNumber + 1); // PDF.js uses 1-based indexing
-
+      const page = await pdf.getPage(pageNumber + 1);
       const viewport = page.getViewport({ scale: 0.5 });
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d');
-
-      if (!context) {
-        throw new Error('Could not get canvas context');
-      }
-
+      if (!context) throw new Error('Canvas context failed');
       canvas.width = viewport.width;
       canvas.height = viewport.height;
-
-      await page.render({
-        canvasContext: context,
-        viewport: viewport
-      }).promise;
-
+      await page.render({ canvasContext: context, viewport: viewport }).promise;
       return canvas.toDataURL('image/png');
-    } catch (error) {
-      console.error('Error generating thumbnail:', error);
+    } catch (e) {
+      console.error('Extraction error:', e);
       return '';
     }
   },
 
   /**
-   * Protect PDF with password
+   * Fuses multiple document streams into a single unified object
    */
-  async protectPDF(
-    pdfBuffer: ArrayBuffer,
-    userPassword: string,
-    ownerPassword?: string
-  ): Promise<Uint8Array> {
-    const pdfDoc = await PDFDocument.load(pdfBuffer);
-    
-    // Note: pdf-lib has limited encryption support
-    // For production, you might need a different library
-    // This is a placeholder for the concept
-    
-    return await pdfDoc.save();
+  async mergePDFs(pdfBuffers: ArrayBuffer[]): Promise<Uint8Array> {
+    const mergedPdf = await PDFDocument.create();
+    for (const buffer of pdfBuffers) {
+      const pdf = await PDFDocument.load(getBufferCopy(buffer));
+      const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+      copiedPages.forEach((page) => mergedPdf.addPage(page));
+    }
+    return await mergedPdf.save({ useObjectStreams: true });
   },
 
   /**
-   * Convert PDF to grayscale
+   * Cleaves specific page ranges from the document core
    */
-  async convertToGrayscale(pdfBuffer: ArrayBuffer): Promise<Uint8Array> {
-    const pdfDoc = await PDFDocument.load(pdfBuffer);
-    // Note: This is a placeholder - actual grayscale conversion
-    // would require image processing of embedded images
-    return await pdfDoc.save();
-  },
-
-  /**
-   * Reorder pages in PDF
-   */
-  async reorderPages(pdfBuffer: ArrayBuffer, newOrder: number[]): Promise<Uint8Array> {
-    const pdfDoc = await PDFDocument.load(pdfBuffer);
+  async splitPDF(pdfBuffer: ArrayBuffer, pageNumbers: number[]): Promise<Uint8Array> {
+    const pdfDoc = await PDFDocument.load(getBufferCopy(pdfBuffer));
     const newPdf = await PDFDocument.create();
-
-    const pages = await newPdf.copyPages(pdfDoc, newOrder);
+    const pages = await newPdf.copyPages(pdfDoc, pageNumbers.map(p => p - 1));
     pages.forEach((page) => newPdf.addPage(page));
+    return await newPdf.save({ useObjectStreams: true });
+  },
 
-    return await newPdf.save();
+  /**
+   * Re-aligns the visual orientation of document pages
+   */
+  async rotatePDF(pdfBuffer: ArrayBuffer, rotation: number): Promise<Uint8Array> {
+    const pdfDoc = await PDFDocument.load(getBufferCopy(pdfBuffer));
+    const pages = pdfDoc.getPages();
+    pages.forEach((page) => {
+      const currentRotation = page.getRotation().angle;
+      page.setRotation(degrees(currentRotation + rotation));
+    });
+    return await pdfDoc.save({ useObjectStreams: true });
+  },
+
+  /**
+   * Optimizes document object streams for minimum memory footprint
+   * Quality: 0.1 (max compression) to 1.0 (min compression)
+   */
+  async compressPDF(pdfBuffer: ArrayBuffer, quality: number = 0.7): Promise<Uint8Array> {
+    try {
+      // Step 1: Load and extract all pages as images
+      const loadingTask = pdfjsLib.getDocument({ data: getBufferCopy(pdfBuffer) });
+      const pdf = await loadingTask.promise;
+      const compressedPdf = await PDFDocument.create();
+      
+      // Calculate scale based on quality (lower quality = smaller images)
+      // Quality 0.1 (max compression) = 0.5 scale, Quality 1.0 (min compression) = 1.5 scale
+      const scale = 0.5 + (quality * 1.0);
+      
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const viewport = page.getViewport({ scale });
+        
+        // Render to canvas
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        if (!context) continue;
+        
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await page.render({ canvasContext: context, viewport }).promise;
+        
+        // Convert to JPEG with quality compression
+        const jpegDataUrl = canvas.toDataURL('image/jpeg', quality);
+        const jpegData = jpegDataUrl.split(',')[1];
+        const jpegBytes = Uint8Array.from(atob(jpegData), c => c.charCodeAt(0));
+        
+        // Embed compressed image
+        const jpegImage = await compressedPdf.embedJpg(jpegBytes);
+        const newPage = compressedPdf.addPage([viewport.width, viewport.height]);
+        newPage.drawImage(jpegImage, {
+          x: 0,
+          y: 0,
+          width: viewport.width,
+          height: viewport.height,
+        });
+      }
+      
+      // Step 2: Save with maximum compression settings
+      return await compressedPdf.save({ 
+        useObjectStreams: true,
+        updateFieldAppearances: false
+      });
+    } catch (error) {
+      console.error('Compression failed, falling back to basic optimization:', error);
+      // Fallback: just optimize the structure without image re-encoding
+      const pdfDoc = await PDFDocument.load(getBufferCopy(pdfBuffer));
+      return await pdfDoc.save({ 
+        useObjectStreams: true,
+        updateFieldAppearances: false
+      });
+    }
+  },
+
+  /**
+   * Translates document layers into visual raster assets (PNG)
+   */
+  async convertPDFToImages(pdfBuffer: ArrayBuffer): Promise<string[]> {
+    try {
+      const loadingTask = pdfjsLib.getDocument({ data: getBufferCopy(pdfBuffer) });
+      const pdf = await loadingTask.promise;
+      const images: string[] = [];
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const viewport = page.getViewport({ scale: 2.0 });
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        if (!context) continue;
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await page.render({ canvasContext: context, viewport: viewport }).promise;
+        images.push(canvas.toDataURL('image/png'));
+      }
+      return images;
+    } catch (e) {
+      console.error('Visual extraction error:', e);
+      return [];
+    }
+  },
+
+  /**
+   * Stacks an identification layer over the document substrate
+   */
+  async addWatermark(pdfBuffer: ArrayBuffer, text: string, opacity: number): Promise<Uint8Array> {
+    const pdfDoc = await PDFDocument.load(getBufferCopy(pdfBuffer));
+    const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const pages = pdfDoc.getPages();
+    pages.forEach((page) => {
+      const { width, height } = page.getSize();
+      page.drawText(text, {
+        x: width / 4,
+        y: height / 2,
+        size: 50,
+        font,
+        color: rgb(0.5, 0.5, 0.5),
+        opacity,
+        rotate: degrees(45),
+      });
+    });
+    return await pdfDoc.save({ useObjectStreams: true });
   }
 };

@@ -1,11 +1,28 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Simplified icon version for favicon -->
+  <!-- Main document shape -->
+  <rect x="8" y="6" width="32" height="44" rx="2" fill="url(#iconGradient1)" opacity="0.95"/>
+  <!-- Fold detail -->
+  <path d="M32 6V18H44L32 6Z" fill="url(#iconGradient2)" opacity="0.85"/>
+  <!-- Content lines -->
+  <line x1="14" y1="26" x2="30" y2="26" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+  <line x1="14" y1="32" x2="28" y2="32" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+  <line x1="14" y1="38" x2="30" y2="38" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+  <!-- Accent dot -->
+  <circle cx="48" cy="20" r="4" fill="url(#iconGradient3)"/>
+  
   <defs>
-    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#10b981;stop-opacity:1" />
+    <linearGradient id="iconGradient1" x1="8" y1="6" x2="40" y2="50" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#8B5CF6"/>
+    </linearGradient>
+    <linearGradient id="iconGradient2" x1="32" y1="6" x2="44" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#818CF8"/>
+      <stop offset="100%" stop-color="#A78BFA"/>
+    </linearGradient>
+    <linearGradient id="iconGradient3" x1="44" y1="16" x2="52" y2="24" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#EC4899"/>
+      <stop offset="100%" stop-color="#F472B6"/>
     </linearGradient>
   </defs>
-  <rect width="256" height="256" rx="64" fill="url(#grad)"/>
-  <path d="M64 64h96v32H64z M64 112h128v32H64z M64 160h96v32H64z" fill="white" opacity="0.9"/>
-  <text x="128" y="220" font-family="Arial, sans-serif" font-size="48" font-weight="bold" fill="white" text-anchor="middle">PDF</text>
 </svg>

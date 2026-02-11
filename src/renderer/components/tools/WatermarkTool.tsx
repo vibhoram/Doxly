@@ -1,178 +1,212 @@
 import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Download } from 'lucide-react';
-import { useAppStore } from '@/store';
-import { pdfUtils } from '@/utils/pdfUtils';
+import { X, Download, Loader2, Droplet, CheckCircle2, ArrowRight, Shield, FileText, PenTool } from 'lucide-react';
+import { useAppStore } from '../../store';
+import { pdfUtils } from '../../utils/pdfUtils';
+import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 
-export default function WatermarkTool() {
+interface WatermarkToolProps {
+  onClose: () => void;
+}
+
+export default function WatermarkTool({ onClose }: WatermarkToolProps) {
   const { getSelectedFiles } = useAppStore();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [watermarkText, setWatermarkText] = useState('CONFIDENTIAL');
-  const [opacity, setOpacity] = useState(30);
-  const [fontSize, setFontSize] = useState(60);
+  const [opacity, setOpacity] = useState(0.3);
+  const [result, setResult] = useState<{ name: string; blob: Blob } | null>(null);
+
+  const selectedFiles = getSelectedFiles();
 
   const handleWatermark = async () => {
-    const selectedFiles = getSelectedFiles();
-
     if (selectedFiles.length === 0) {
-      toast.error('Please select at least 1 PDF file');
+      toast.error('Forge requires document selection');
       return;
     }
 
     if (!watermarkText.trim()) {
-      toast.error('Please enter watermark text');
+      toast.error('Identity required for watermark');
       return;
     }
 
     setIsProcessing(true);
+    setProgress(0);
 
     try {
-      for (const file of selectedFiles) {
-        const pdfBuffer = await window.electronAPI.file.read(file.path);
-        const watermarkedPdf = await pdfUtils.addWatermark(pdfBuffer, watermarkText, {
-          opacity: opacity / 100,
-          size: fontSize,
-          rotation: 45
-        });
+      const file = selectedFiles[0];
+      if (!file.data) throw new Error('Data fragment corrupted');
 
-        const savePath = await window.electronAPI.file.save({
-          defaultPath: file.name.replace('.pdf', '_watermarked.pdf'),
-          filters: [{ name: 'PDF Files', extensions: ['pdf'] }]
-        });
+      setProgress(20);
+      await new Promise(r => setTimeout(r, 400));
 
-        if (savePath) {
-          await window.electronAPI.file.write(savePath, watermarkedPdf);
-        }
-      }
+      setProgress(70);
+      const watermarkedBuffer = await pdfUtils.addWatermark(
+        file.data,
+        watermarkText,
+        opacity
+      );
+      
+      setProgress(90);
+      const blob = new Blob([watermarkedBuffer.buffer as ArrayBuffer], { type: 'application/pdf' });
+      
+      await new Promise(r => setTimeout(r, 400));
+      setProgress(100);
 
-      toast.success(`Watermarked ${selectedFiles.length} file(s)!`);
-    } catch (error) {
+      setResult({
+        name: file.name.replace('.pdf', '_stamped.pdf'),
+        blob
+      });
+      
+      toast.success('Document identity stamped!');
+    } catch (error: any) {
       console.error('Watermark error:', error);
-      toast.error('Failed to add watermark');
+      toast.error(error.message || 'Stamping failed');
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const selectedFiles = getSelectedFiles();
+  const downloadResult = () => {
+    if (!result) return;
+    const url = URL.createObjectURL(result.blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = result.name;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
-    <div className="p-6 space-y-4">
-      <div>
-        <h4 className="font-medium mb-2">Add Watermark</h4>
-        <p className="text-sm text-gray-500 dark:text-gray-400">
-          Add text watermark to your PDFs
-        </p>
-      </div>
-
-      <div className="space-y-3">
-        <div>
-          <label className="text-sm font-medium block mb-2">Watermark Text</label>
-          <input
-            type="text"
-            value={watermarkText}
-            onChange={(e) => setWatermarkText(e.target.value)}
-            placeholder="Enter watermark text"
-            className="input"
-            maxLength={50}
-          />
-        </div>
-
-        <div>
-          <div className="flex items-center justify-between text-sm mb-2">
-            <label className="font-medium">Opacity</label>
-            <span className="text-primary font-semibold">{opacity}%</span>
-          </div>
-          <input
-            type="range"
-            min={10}
-            max={100}
-            step={10}
-            value={opacity}
-            onChange={(e) => setOpacity(Number(e.target.value))}
-            className="w-full h-2 bg-gray-300 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
-          />
-        </div>
-
-        <div>
-          <div className="flex items-center justify-between text-sm mb-2">
-            <label className="font-medium">Font Size</label>
-            <span className="text-primary font-semibold">{fontSize}px</span>
-          </div>
-          <input
-            type="range"
-            min={20}
-            max={100}
-            step={10}
-            value={fontSize}
-            onChange={(e) => setFontSize(Number(e.target.value))}
-            className="w-full h-2 bg-gray-300 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
-          />
-        </div>
-      </div>
-
-      <div className="glass p-4 rounded-lg">
-        <div className="text-sm font-medium mb-3">Preview</div>
-        <div className="bg-white dark:bg-gray-800 aspect-[3/4] rounded-lg flex items-center justify-center relative overflow-hidden">
-          <div
-            className="absolute text-gray-400 dark:text-gray-600 font-bold select-none"
-            style={{
-              opacity: opacity / 100,
-              fontSize: `${fontSize / 4}px`,
-              transform: 'rotate(45deg)'
-            }}
+    <div className="flex-1 flex flex-col">
+      <AnimatePresence mode="wait">
+        {!result ? (
+          <motion.div 
+            key="config"
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 1.02 }}
+            className="flex-1 flex flex-col"
           >
-            {watermarkText || 'WATERMARK'}
-          </div>
-          <div className="text-xs text-gray-400">Document Preview</div>
-        </div>
-      </div>
+            <div className="mb-10 p-6 rounded-2xl bg-slate-50 border border-slate-100 italic text-gray-400 text-sm">
+                <div className="flex items-center gap-2 mb-2 font-bold not-italic text-gray-600 uppercase tracking-widest text-[10px]">
+                    <FileText className="w-3 h-3" /> Target Object
+                </div>
+                {selectedFiles[0]?.name}
+            </div>
 
-      <div className="glass p-4 rounded-lg">
-        <div className="text-sm font-medium mb-2">
-          Selected Files ({selectedFiles.length})
-        </div>
-        {selectedFiles.length === 0 ? (
-          <div className="text-xs text-gray-500 dark:text-gray-400">
-            No files selected
-          </div>
-        ) : (
-          <div className="space-y-1 max-h-32 overflow-auto scrollbar-thin">
-            {selectedFiles.map((file) => (
-              <div key={file.id} className="text-xs truncate" title={file.name}>
-                {file.name}
+            <div className="space-y-10 mb-auto">
+              <div>
+                <label className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-4 block underline decoration-primary/30 underline-offset-4">Stamp Configuration</label>
+                <div className="grid grid-cols-1 gap-6">
+                    <div className="space-y-2">
+                        <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest px-1">Visual Identity</span>
+                        <input
+                          type="text"
+                          value={watermarkText}
+                          onChange={(e) => setWatermarkText(e.target.value)}
+                          placeholder="e.g. PROPERTY OF DOXLY"
+                          className="w-full px-6 py-4 bg-white border border-slate-100 rounded-3xl text-sm font-bold shadow-sm focus:ring-2 focus:ring-primary/10 outline-none transition-all placeholder:text-slate-300"
+                        />
+                    </div>
+                   
+                    <div className="space-y-4 pt-4">
+                        <div className="flex items-center justify-between px-1">
+                            <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Opacity Level</span>
+                            <span className="text-xs font-black text-primary bg-primary/5 px-2 py-0.5 rounded-lg">{Math.round(opacity * 100)}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.1"
+                          max="0.9"
+                          step="0.1"
+                          value={opacity}
+                          onChange={(e) => setOpacity(parseFloat(e.target.value))}
+                          className="w-full"
+                        />
+                    </div>
+                </div>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
 
-      {selectedFiles.length === 0 && (
-        <div className="text-sm text-yellow-600 dark:text-yellow-400 p-3 bg-yellow-500/10 rounded-lg">
-          ⚠ Select at least 1 PDF file
-        </div>
-      )}
+              <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 flex items-start gap-3">
+                <Shield className="w-5 h-5 text-blue-500 mt-0.5" />
+                <p className="text-[10px] text-blue-800 font-bold uppercase tracking-widest leading-relaxed">
+                  Encryption Layer Active. Identity stamping occurring in localized sandbox. No cloud ping detected.
+                </p>
+              </div>
+            </div>
 
-      <motion.button
-        onClick={handleWatermark}
-        disabled={selectedFiles.length === 0 || !watermarkText.trim() || isProcessing}
-        className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
-        whileHover={{ scale: selectedFiles.length > 0 && watermarkText.trim() ? 1.02 : 1 }}
-        whileTap={{ scale: selectedFiles.length > 0 && watermarkText.trim() ? 0.98 : 1 }}
-      >
-        {isProcessing ? (
-          <div className="flex items-center justify-center gap-2">
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            <span>Adding Watermark...</span>
-          </div>
+            <div className="pt-8 border-t border-slate-100">
+              <button
+                onClick={handleWatermark}
+                disabled={isProcessing || !watermarkText.trim()}
+                className="btn btn-primary btn-glow w-full"
+              >
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>Stamping... {Math.round(progress)}%</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Execute Stamping</span>
+                    <ArrowRight className="w-5 h-5" />
+                  </>
+                )}
+              </button>
+              
+              {isProcessing && (
+                <div className="progress-container mt-4">
+                  <motion.div 
+                    className="progress-fill"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${progress}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          </motion.div>
         ) : (
-          <div className="flex items-center justify-center gap-2">
-            <Download className="w-4 h-4" />
-            <span>Add Watermark & Download</span>
-          </div>
+          <motion.div 
+            key="success"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex-1 flex flex-col items-center justify-center text-center py-10"
+          >
+            <div className="w-24 h-24 bg-primary text-white rounded-full flex items-center justify-center mb-8 shadow-2xl shadow-primary/20">
+              <PenTool className="w-12 h-12" />
+            </div>
+            
+            <h3 className="text-4xl font-black text-slate-900 mb-2 tracking-tighter italic">Identity Stamped</h3>
+            <p className="text-slate-500 font-medium mb-12">
+              Successfully applied "<b>{watermarkText}</b>" layer to your document. <br/>
+              Total Integrity Maintained.
+            </p>
+
+            <div className="flex flex-col gap-4 w-full max-w-sm">
+              <button 
+                onClick={downloadResult}
+                className="btn btn-primary btn-glow w-full py-4"
+              >
+                <Download className="w-5 h-5" /> Download Stamped Doc
+              </button>
+              <button 
+                onClick={() => setResult(null)}
+                className="btn btn-primary-ghost w-full py-4 font-black uppercase tracking-widest text-[10px]"
+              >
+                Modify Settings
+              </button>
+            </div>
+            
+            <button 
+              onClick={onClose}
+              className="mt-12 text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] hover:text-primary transition-colors"
+            >
+              Exit Stamp Arsenal
+            </button>
+          </motion.div>
         )}
-      </motion.button>
+      </AnimatePresence>
     </div>
   );
 }

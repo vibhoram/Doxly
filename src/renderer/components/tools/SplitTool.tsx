@@ -1,176 +1,216 @@
 import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Download } from 'lucide-react';
-import { useAppStore } from '@/store';
-import { pdfUtils } from '@/utils/pdfUtils';
+import { X, Download, Loader2, Scissors, CheckCircle2, ArrowRight, Shield, FileText } from 'lucide-react';
+import { useAppStore } from '../../store';
+import { pdfUtils } from '../../utils/pdfUtils';
+import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 
-export default function SplitTool() {
+interface SplitToolProps {
+  onClose: () => void;
+}
+
+export default function SplitTool({ onClose }: SplitToolProps) {
   const { getSelectedFiles } = useAppStore();
   const [isProcessing, setIsProcessing] = useState(false);
-  const [splitMode, setSplitMode] = useState<'all' | 'range' | 'custom'>('all');
-  const [rangeStart, setRangeStart] = useState(1);
-  const [rangeEnd, setRangeEnd] = useState(1);
+  const [progress, setProgress] = useState(0);
+  const [splitMode, setSplitMode] = useState<'all' | 'range'>('all');
+  const [pageRanges, setPageRanges] = useState('1-3, 4-6');
+  const [result, setResult] = useState<{ count: number } | null>(null);
+
+  const selectedFiles = getSelectedFiles();
 
   const handleSplit = async () => {
-    const selectedFiles = getSelectedFiles();
-
-    if (selectedFiles.length !== 1) {
-      toast.error('Please select exactly 1 PDF file to split');
+    if (selectedFiles.length === 0) {
+      toast.error('Forge requires document selection');
       return;
     }
 
     setIsProcessing(true);
+    setProgress(0);
 
     try {
       const file = selectedFiles[0];
-      const pdfBuffer = await window.electronAPI.file.read(file.path);
-      const pageCount = await pdfUtils.getPageCount(pdfBuffer);
+      if (!file.data) throw new Error('Data fragment corrupted');
 
-      let ranges: { start: number; end: number }[] = [];
-
+      let splitCount = 0;
       if (splitMode === 'all') {
-        // Split into individual pages
-        ranges = Array.from({ length: pageCount }, (_, i) => ({
-          start: i,
-          end: i
-        }));
-      } else if (splitMode === 'range') {
-        ranges = [{ start: rangeStart - 1, end: rangeEnd - 1 }];
-      }
-
-      const splitPdfs = await pdfUtils.splitPDF(pdfBuffer, ranges);
-
-      // Save all split PDFs
-      const baseName = file.name.replace('.pdf', '');
-      
-      for (let i = 0; i < splitPdfs.length; i++) {
-        const savePath = await window.electronAPI.file.save({
-          defaultPath: `${baseName}_page_${i + 1}.pdf`,
-          filters: [{ name: 'PDF Files', extensions: ['pdf'] }]
-        });
-
-        if (savePath) {
-          await window.electronAPI.file.write(savePath, splitPdfs[i]);
+        for (let i = 1; i <= file.pages; i++) {
+          setProgress((i / file.pages) * 90);
+          const splitBuffer = await pdfUtils.splitPDF(file.data, [i]);
+          const blob = new Blob([splitBuffer.buffer as ArrayBuffer], { type: 'application/pdf' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = file.name.replace('.pdf', `_page${i}.pdf`);
+          link.click();
+          URL.revokeObjectURL(url);
+          splitCount++;
+        }
+      } else {
+        const ranges = pageRanges.split(',').map(r => r.trim());
+        for (let i = 0; i < ranges.length; i++) {
+          setProgress((i / ranges.length) * 90);
+          const range = ranges[i];
+          const [start, end] = range.split('-').map(n => parseInt(n.trim()));
+          const pages = [];
+          for (let p = start; p <= end; p++) pages.push(p);
+          
+          const splitBuffer = await pdfUtils.splitPDF(file.data, pages);
+          const blob = new Blob([splitBuffer.buffer as ArrayBuffer], { type: 'application/pdf' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = file.name.replace('.pdf', `_split${i + 1}.pdf`);
+          link.click();
+          URL.revokeObjectURL(url);
+          splitCount++;
         }
       }
-
-      toast.success(`PDF split into ${splitPdfs.length} file(s)!`);
-    } catch (error) {
+      
+      setProgress(100);
+      setResult({ count: splitCount });
+      toast.success('Document cleavage successful!');
+    } catch (error: any) {
       console.error('Split error:', error);
-      toast.error('Failed to split PDF');
+      toast.error(error.message || 'Splitting failed');
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const selectedFiles = getSelectedFiles();
-  const selectedFile = selectedFiles[0];
-
   return (
-    <div className="p-6 space-y-4">
-      <div>
-        <h4 className="font-medium mb-2">Split PDF</h4>
-        <p className="text-sm text-gray-500 dark:text-gray-400">
-          Extract pages from a PDF document
-        </p>
-      </div>
-
-      {selectedFile && (
-        <div className="glass p-4 rounded-lg">
-          <div className="text-sm font-medium mb-2">Selected File</div>
-          <div className="text-xs truncate" title={selectedFile.name}>
-            {selectedFile.name}
-          </div>
-          {selectedFile.pages && (
-            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              {selectedFile.pages} pages
+    <div className="flex-1 flex flex-col">
+      <AnimatePresence mode="wait">
+        {!result ? (
+          <motion.div 
+            key="config"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="flex-1 flex flex-col"
+          >
+            <div className="mb-10 p-6 rounded-2xl bg-slate-50 border border-slate-100 italic text-gray-400 text-sm">
+                <div className="flex items-center gap-2 mb-2 font-bold not-italic text-gray-600 uppercase tracking-widest text-[10px]">
+                    <FileText className="w-3 h-3" /> Target File
+                </div>
+                {selectedFiles[0]?.name} ({selectedFiles[0]?.pages} Pages)
             </div>
-          )}
-        </div>
-      )}
 
-      <div className="space-y-3">
-        <div className="text-sm font-medium">Split Mode</div>
-        
-        <label className="flex items-center gap-3 p-3 glass rounded-lg cursor-pointer hover:glass-strong">
-          <input
-            type="radio"
-            name="splitMode"
-            checked={splitMode === 'all'}
-            onChange={() => setSplitMode('all')}
-            className="w-4 h-4"
-          />
-          <div>
-            <div className="text-sm font-medium">All Pages</div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">
-              Extract each page as a separate PDF
-            </div>
-          </div>
-        </label>
-
-        <label className="flex items-center gap-3 p-3 glass rounded-lg cursor-pointer hover:glass-strong">
-          <input
-            type="radio"
-            name="splitMode"
-            checked={splitMode === 'range'}
-            onChange={() => setSplitMode('range')}
-            className="w-4 h-4"
-          />
-          <div className="flex-1">
-            <div className="text-sm font-medium mb-2">Page Range</div>
-            {splitMode === 'range' && (
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={1}
-                  max={selectedFile?.pages || 1}
-                  value={rangeStart}
-                  onChange={(e) => setRangeStart(Number(e.target.value))}
-                  className="input text-sm py-1"
-                  placeholder="Start"
-                />
-                <span className="text-sm">to</span>
-                <input
-                  type="number"
-                  min={rangeStart}
-                  max={selectedFile?.pages || 1}
-                  value={rangeEnd}
-                  onChange={(e) => setRangeEnd(Number(e.target.value))}
-                  className="input text-sm py-1"
-                  placeholder="End"
-                />
+            <div className="space-y-6 mb-auto">
+              <div 
+                onClick={() => setSplitMode('all')}
+                className={`p-6 rounded-3xl border-2 transition-all cursor-pointer group ${
+                    splitMode === 'all' ? 'border-primary bg-primary/5' : 'border-slate-100 bg-white hover:border-slate-200'
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${splitMode === 'all' ? 'bg-primary text-white' : 'bg-slate-100 text-slate-400'}`}>
+                        <Scissors className="w-5 h-5" />
+                    </div>
+                    <div>
+                        <div className="text-sm font-black text-slate-900 uppercase tracking-tight">Extract Individual Pages</div>
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Create {selectedFiles[0]?.pages} separate documents</div>
+                    </div>
+                </div>
               </div>
-            )}
-          </div>
-        </label>
-      </div>
 
-      {selectedFiles.length !== 1 && (
-        <div className="text-sm text-yellow-600 dark:text-yellow-400 p-3 bg-yellow-500/10 rounded-lg">
-          ⚠ Select exactly 1 PDF file to split
-        </div>
-      )}
+              <div 
+                onClick={() => setSplitMode('range')}
+                className={`p-6 rounded-3xl border-2 transition-all cursor-pointer group ${
+                    splitMode === 'range' ? 'border-primary bg-primary/5' : 'border-slate-100 bg-white hover:border-slate-200'
+                }`}
+              >
+                <div className="flex items-start gap-4">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${splitMode === 'range' ? 'bg-primary text-white' : 'bg-slate-100 text-slate-400'}`}>
+                        <FileText className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1">
+                        <div className="text-sm font-black text-slate-900 uppercase tracking-tight">Custom Selection</div>
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Define specific page groups</div>
+                        {splitMode === 'range' && (
+                            <input
+                              type="text"
+                              value={pageRanges}
+                              onChange={(e) => setPageRanges(e.target.value)}
+                              placeholder="e.g., 1-3, 4-6"
+                              className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                            />
+                        )}
+                    </div>
+                </div>
+              </div>
 
-      <motion.button
-        onClick={handleSplit}
-        disabled={selectedFiles.length !== 1 || isProcessing}
-        className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
-        whileHover={{ scale: selectedFiles.length === 1 ? 1.02 : 1 }}
-        whileTap={{ scale: selectedFiles.length === 1 ? 0.98 : 1 }}
-      >
-        {isProcessing ? (
-          <div className="flex items-center justify-center gap-2">
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            <span>Splitting...</span>
-          </div>
+              <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 flex items-start gap-3">
+                <Shield className="w-5 h-5 text-blue-500 mt-0.5" />
+                <p className="text-[10px] text-blue-800 font-bold uppercase tracking-widest leading-relaxed">
+                  Local Cleavage Protocol Enabled. All page data remains in volatile system memory.
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-8 border-t border-slate-100">
+              <button
+                onClick={handleSplit}
+                disabled={isProcessing}
+                className="btn btn-primary btn-glow w-full"
+              >
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>Cleaving... {Math.round(progress)}%</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Execute Splitting</span>
+                    <ArrowRight className="w-5 h-5" />
+                  </>
+                )}
+              </button>
+              
+              {isProcessing && (
+                <div className="progress-container mt-4">
+                  <motion.div 
+                    className="progress-fill"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${progress}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          </motion.div>
         ) : (
-          <div className="flex items-center justify-center gap-2">
-            <Download className="w-4 h-4" />
-            <span>Split & Download</span>
-          </div>
+          <motion.div 
+            key="success"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex-1 flex flex-col items-center justify-center text-center py-10"
+          >
+            <div className="w-24 h-24 bg-green-500 rounded-3xl flex items-center justify-center mb-8 shadow-xl shadow-green-500/20 rotate-6">
+              <CheckCircle2 className="w-12 h-12 text-white" />
+            </div>
+            
+            <h3 className="text-4xl font-black text-slate-900 mb-2 tracking-tighter">Cleavage Complete!</h3>
+            <p className="text-slate-500 font-medium mb-10 italic">
+              Successfully generated <b>{result.count}</b> individual documents. <br/>
+              Check your default downloads portal.
+            </p>
+
+            <button 
+              onClick={() => setResult(null)}
+              className="btn btn-primary btn-glow w-full max-w-xs"
+            >
+              Reset Forging
+            </button>
+            
+            <button 
+              onClick={onClose}
+              className="mt-12 text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] hover:text-primary transition-colors"
+            >
+              Exit Arsenal
+            </button>
+          </motion.div>
         )}
-      </motion.button>
+      </AnimatePresence>
     </div>
   );
 }

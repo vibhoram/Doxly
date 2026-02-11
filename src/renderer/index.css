@@ -1,99 +1,193 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+:root {
+  --primary: #6366f1;
+  --primary-hover: #4f46e5;
+  --primary-dark: #3730a3;
+  --secondary: #0f172a;
+  --accent: #10b981;
+  --background: #ffffff;
+}
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
-  * {
-    @apply border-border;
-  }
-  
   body {
-    @apply bg-light dark:bg-dark text-gray-900 dark:text-gray-100 font-sans;
-    @apply transition-colors duration-200;
+    @apply bg-white text-slate-900 overflow-x-hidden font-sans;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 }
 
-@layer components {
-  .glass {
-    @apply bg-white/10 dark:bg-black/10;
-    @apply backdrop-blur-glass;
-    @apply border border-white/20 dark:border-white/10;
-    @apply rounded-xl;
-  }
-  
-  .glass-strong {
-    @apply bg-white/20 dark:bg-black/20;
-    @apply backdrop-blur-glass;
-    @apply border border-white/30 dark:border-white/15;
-    @apply rounded-xl;
-  }
-  
-  .btn {
-    @apply px-4 py-2 rounded-lg font-medium;
-    @apply transition-all duration-200;
-    @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
-  }
-  
-  .btn-primary {
-    @apply btn bg-primary hover:bg-primary-hover text-white;
-    @apply focus:ring-primary;
-    @apply transform hover:scale-105 active:scale-100;
-  }
-  
-  .btn-success {
-    @apply btn bg-success hover:bg-success-hover text-white;
-    @apply focus:ring-success;
-    @apply transform hover:scale-105 active:scale-100;
-  }
-  
-  .btn-secondary {
-    @apply btn glass hover:glass-strong text-gray-700 dark:text-gray-200;
-    @apply transform hover:scale-105 active:scale-100;
-  }
-  
-  .input {
-    @apply w-full px-4 py-2 rounded-lg;
-    @apply bg-white/50 dark:bg-black/50;
-    @apply border border-light-border dark:border-dark-border;
-    @apply focus:outline-none focus:ring-2 focus:ring-primary;
-    @apply transition-all duration-200;
-  }
-  
-  .card {
-    @apply glass p-6;
-    @apply animate-fade-in;
-  }
-  
-  .sidebar-btn {
-    @apply w-full p-4 rounded-lg text-left;
-    @apply glass hover:glass-strong;
-    @apply transition-all duration-200;
-    @apply transform hover:scale-105 active:scale-100;
-    @apply flex flex-col items-center gap-2;
-  }
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
-  
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  
-  .scrollbar-thin::-webkit-scrollbar-track {
-    @apply bg-transparent;
-  }
-  
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    @apply bg-gray-400/50 dark:bg-gray-600/50 rounded-full;
-  }
-  
-  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    @apply bg-gray-500/70 dark:bg-gray-500/70;
-  }
+@keyframes beam {
+  0% { top: -10%; opacity: 0; }
+  50% { opacity: 1; }
+  100% { top: 110%; opacity: 0; }
+}
+
+@keyframes shine-soft {
+  0% { left: -100%; }
+  100% { left: 200%; }
+}
+
+/* Container System - Prevents edge-touching */
+.container {
+  @apply w-full mx-auto px-6 md:px-8 lg:px-12;
+  max-width: 1400px;
+}
+
+.header .container {
+  @apply px-6 md:px-12;
+}
+
+/* Base Component Styles with Glassmorphism */
+.content-wrapper {
+  @apply bg-white/95 backdrop-blur-xl border border-white/20 rounded-[2.5rem] p-10 md:p-16 transition-all duration-500;
+  box-shadow:
+    0 8px 32px 0 rgba(31, 38, 135, 0.15),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.5);
+}
+
+/* Professional SATISFYING Button System with Glass */
+.btn {
+  @apply relative inline-flex items-center justify-center gap-3 px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.15em] transition-all duration-500 overflow-hidden select-none active:scale-[0.97];
+  backdrop-filter: blur(12px);
+}
+
+.btn-primary {
+  @apply bg-slate-900/90 text-white shadow-xl shadow-slate-900/20 hover:bg-primary/90 hover:shadow-primary/30;
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.btn-primary-ghost {
+  @apply bg-white/80 text-slate-700 shadow-lg shadow-slate-200/50 hover:bg-white/90 hover:text-primary hover:shadow-primary/20;
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.btn-outline {
+  @apply bg-white/70 text-slate-600 border-2 border-slate-200/50 hover:border-primary/50 hover:text-primary hover:bg-white/90;
+  backdrop-filter: blur(12px);
+}
+
+/* Slow Shine Effect (Satisfying, not edgy) */
+.btn::after {
+  content: '';
+  @apply absolute top-0 -left-full w-full h-full bg-gradient-to-r from-transparent via-white/10 to-transparent skew-x-[-25deg] pointer-events-none;
+  transition: left 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn:hover::after {
+  @apply left-[150%];
+}
+
+/* Glass Navigation Links */
+.nav-link {
+  @apply text-slate-600 hover:text-primary transition-all relative;
+}
+
+.nav-link::after {
+  content: '';
+  @apply absolute bottom-0 left-1/2 w-0 h-0.5 bg-primary transition-all duration-300;
+  transform: translateX(-50%);
+}
+
+.nav-link:hover::after {
+  @apply w-3/4;
+}
+
+/* Footer Links */
+.footer-link {
+  @apply block text-[11px] font-bold text-slate-400 hover:text-slate-900 hover:translate-x-2 transition-all duration-300;
+}
+
+.footer-title {
+  @apply text-[10px] font-black uppercase tracking-[0.3em] text-slate-900 mb-8 flex items-center gap-2;
+}
+
+.footer-title::after {
+  content: '';
+  @apply w-6 h-[2px] bg-slate-100;
+}
+
+/* Tool Grid & Cards */
+.tool-grid {
+  @apply grid grid-cols-2 md:grid-cols-4 gap-6;
+}
+
+/* Tool Cards with Glassmorphism */
+.tool-card {
+  @apply p-8 rounded-3xl border border-slate-100/50 cursor-pointer transition-all duration-500;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 252, 0.8));
+  backdrop-filter: blur(16px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+}
+
+.tool-card:hover {
+  @apply border-primary/30 shadow-2xl -translate-y-1;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.9));
+  box-shadow:
+    0 20px 40px -10px rgba(99, 102, 241, 0.2),
+    0 0 0 1px rgba(99, 102, 241, 0.1);
+}
+
+.tool-icon {
+  @apply w-16 h-16 rounded-[1.5rem] bg-slate-50 flex items-center justify-center mb-6 transition-all duration-500 group-hover:bg-primary group-hover:text-white group-hover:rotate-6 scale-90 group-hover:scale-100;
+}
+
+.tool-name {
+  @apply text-[11px] font-black text-slate-900 uppercase tracking-widest text-center;
+}
+
+/* Upload Zone with Premium Glass */
+.upload-zone {
+  @apply p-16 rounded-3xl border-2 border-dashed border-slate-200 cursor-pointer transition-all duration-500;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.7), rgba(248, 250, 252, 0.8));
+  backdrop-filter: blur(20px);
+  box-shadow: 
+    0 8px 32px 0 rgba(31, 38, 135, 0.1),
+    inset 0 2px 8px 0 rgba(255, 255, 255, 0.6);
+}
+
+.upload-zone:hover {
+  @apply border-primary/40 shadow-2xl;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.85), rgba(248, 250, 252, 0.95));
+  box-shadow: 
+    0 20px 60px -10px rgba(99, 102, 241, 0.25),
+    inset 0 2px 12px 0 rgba(255, 255, 255, 0.7);
+}
+
+.upload-zone.dragging {
+  @apply border-primary bg-primary/[0.02] scale-[1.02];
+}
+
+/* Animations */
+.animate-beam {
+  animation: beam 4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  @apply w-1.5;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-slate-100 rounded-full hover:bg-slate-200 transition-colors;
+}
+
+/* Progress bar container */
+.progress-container {
+  @apply w-full h-2 bg-slate-50 rounded-full overflow-hidden border border-slate-100;
+}
+
+.progress-fill {
+  @apply h-full bg-primary transition-all duration-500 ease-out;
 }

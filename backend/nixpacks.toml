@@ -1,0 +1,4 @@
+# Railway Configuration for LibreOffice
+
+[phases.setup]
+nixPkgs = ["...", "libreoffice"]

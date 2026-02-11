@@ -22,7 +22,7 @@ export default function TitleBar({ onToggleTheme, theme }: TitleBarProps) {
     <div className="h-12 flex items-center justify-between px-4 glass border-b border-light-border dark:border-dark-border select-none">
       <div className="flex items-center gap-3">
         <div className="text-xl font-bold bg-gradient-to-r from-primary to-success bg-clip-text text-transparent">
-          PDF ProForge
+          Doxly
         </div>
         <div className="text-xs text-gray-500 dark:text-gray-400">
           v1.0.0
